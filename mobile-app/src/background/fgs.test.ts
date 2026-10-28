@@ -72,7 +72,8 @@ describe('foreground service policy', () => {
     );
     const pluginValue = plugin.match(/'android:stopWithTask': '([^']+)'/)?.[1];
     const manifestValue = manifest.match(/android:stopWithTask="([^"]+)"/)?.[1];
-    expect(pluginValue).toBe('true');
-    expect(manifestValue).toBe('true');
+    // false, so Android calls onTaskRemoved and the recents swipe can log out of the server.
+    expect(pluginValue).toBe('false');
+    expect(manifestValue).toBe('false');
   });
 });

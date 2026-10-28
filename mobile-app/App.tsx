@@ -7,6 +7,7 @@ import {
   type StackPresentationTypes,
 } from 'react-native-screens';
 import { StatusBar } from 'expo-status-bar';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 
 import { session, useSessionStore } from './src/session/store';
@@ -16,7 +17,6 @@ import {
   tallyFrameStrokeRadius,
   tallyFrameStrokeWidth,
 } from './src/protocol';
-import { androidSafeArea } from './src/ui/androidSafeArea';
 import { LoginScreen } from './src/ui/LoginScreen';
 import { OperatorScreen } from './src/ui/OperatorScreen';
 import { PausedScreen } from './src/ui/PausedScreen';
@@ -28,6 +28,21 @@ import { settingsPalette, settingsScheme } from './src/ui/settingsTheme';
 import { colors } from './src/ui/theme';
 
 export default function App() {
+  return (
+    <SafeAreaProvider>
+      <AppContent />
+    </SafeAreaProvider>
+  );
+}
+
+function AppContent() {
+  // Android draws edge-to-edge: pad by the real system bar insets (3-button bar, gesture bar,
+  // status bar, cutout) instead of a fixed guess, so the bottom Reply button stays reachable.
+  const insets = useSafeAreaInsets();
+  const androidInsets =
+    Platform.OS === 'android'
+      ? { paddingTop: insets.top, paddingBottom: insets.bottom, paddingLeft: insets.left, paddingRight: insets.right }
+      : null;
   const hydrated = useSessionStore((state) => state.hydrated);
   const identity = useSessionStore((state) => state.identity);
   const operatorReady = useSessionStore((state) => state.operatorReady);
@@ -87,7 +102,7 @@ export default function App() {
   let pages: Page[] = [screen];
   if (loginOverProfiles) {
     pages = ['profiles', 'login'];
-  } else if (sheetOpen) {
+  } else if (sheetOpen && !ANDROID_SHEET_OVERLAY) {
     pages = ['operator', 'sheet'];
   }
 
@@ -111,49 +126,58 @@ export default function App() {
 
   return (
     <View style={styles.root}>
-      <SafeAreaView style={[styles.safe, androidSafeArea]}>
+      <SafeAreaView style={[styles.safe, androidInsets]}>
         <StatusBar style="light" />
-        <ScreenStack style={styles.stack}>
-          {pages.map((page, index) => {
-            if (page === 'sheet') {
+        <View style={styles.stack}>
+          <ScreenStack style={styles.stack}>
+            {pages.map((page, index) => {
+              if (page === 'sheet') {
+                return (
+                  <ScreenStackItem
+                    key={page}
+                    screenId={page}
+                    headerConfig={HIDDEN_HEADER}
+                    {...sheetPresentation()}
+                    gestureEnabled
+                    fullScreenSwipeEnabled={false}
+                    onDismissed={closeSessionSheet}
+                    contentStyle={Platform.OS === 'ios' && Platform.isPad ? null : { backgroundColor: sheetColor }}
+                  >
+                    <SessionSheet onClose={closeSessionSheet} />
+                  </ScreenStackItem>
+                );
+              }
+              // Only pages pushed on another one slide and swipe back; other screens swap in place.
+              const pushed = index > 0;
               return (
                 <ScreenStackItem
                   key={page}
                   screenId={page}
                   headerConfig={HIDDEN_HEADER}
-                  {...sheetPresentation()}
-                  gestureEnabled
-                  fullScreenSwipeEnabled={false}
-                  onDismissed={closeSessionSheet}
-                  contentStyle={Platform.OS === 'ios' && Platform.isPad ? null : { backgroundColor: sheetColor }}
+                  stackAnimation={pushed ? 'default' : 'none'}
+                  gestureEnabled={pushed}
+                  fullScreenSwipeEnabled
+                  hideKeyboardOnSwipe
+                  onDismissed={() => {
+                    if (page === 'login') {
+                      session.cancelAddProfile();
+                    }
+                  }}
+                  contentStyle={styles.page}
                 >
-                  <SessionSheet onClose={closeSessionSheet} />
+                  <AppScreen screen={page} />
                 </ScreenStackItem>
               );
-            }
-            // Only pages pushed on another one slide and swipe back; other screens swap in place.
-            const pushed = index > 0;
-            return (
-              <ScreenStackItem
-                key={page}
-                screenId={page}
-                headerConfig={HIDDEN_HEADER}
-                stackAnimation={pushed ? 'default' : 'none'}
-                gestureEnabled={pushed}
-                fullScreenSwipeEnabled
-                hideKeyboardOnSwipe
-                onDismissed={() => {
-                  if (page === 'login') {
-                    session.cancelAddProfile();
-                  }
-                }}
-                contentStyle={styles.page}
-              >
-                <AppScreen screen={page} />
-              </ScreenStackItem>
-            );
-          })}
-        </ScreenStack>
+            })}
+          </ScreenStack>
+          {ANDROID_SHEET_OVERLAY && sheetOpen ? (
+            // Android: a plain overlay instead of a react-native-screens modal with a nested
+            // stack, whose pages took scroll gestures but no taps on Android.
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: sheetColor }]}>
+              <SessionSheet onClose={closeSessionSheet} />
+            </View>
+          ) : null}
+        </View>
       </SafeAreaView>
       {identity && operatorReady && tallyColor ? <TallyScreenFrame color={tallyColor} /> : null}
     </View>
@@ -175,6 +199,9 @@ function sheetPresentation(): { stackPresentation: StackPresentationTypes; stack
 }
 
 const HIDDEN_HEADER = { hidden: true };
+
+/** Android draws the session sheet as an overlay View, not through react-native-screens. */
+const ANDROID_SHEET_OVERLAY = Platform.OS === 'android';
 
 function AppScreen({ screen }: { screen: Screen }) {
   switch (screen) {

@@ -11,7 +11,9 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.util.Log
 
 class TalkToMeForegroundService : Service() {
@@ -83,7 +85,14 @@ class TalkToMeForegroundService : Service() {
         .setClassName(packageName, "expo.modules.sessionpresence.TalkToMeSessionWidget")
         .setAction("expo.modules.sessionpresence.SESSION_ENDED"),
     )
-    stopSession()
+    // Keep the service (and so the process) alive briefly: JS disconnect() logs out of the
+    // server and stops this service itself. Stopping at once killed the process before the
+    // logout left, so the server kept showing the client as connected.
+    Handler(Looper.getMainLooper()).postDelayed({
+      if (Holder.running) {
+        stopSession()
+      }
+    }, TASK_REMOVED_LOGOUT_GRACE_MS)
     super.onTaskRemoved(rootIntent)
   }
 
@@ -254,6 +263,7 @@ class TalkToMeForegroundService : Service() {
     const val LEGACY_CHANNEL_ID_V2 = "talktome.session.v2"
     const val LEGACY_CHANNEL_ID_V3 = "talktome.session.v3"
     const val NOTIFICATION_ID = 5602
+    private const val TASK_REMOVED_LOGOUT_GRACE_MS = 3_000L
     private const val TAG = "TalkToMeFgs"
 
     @Volatile

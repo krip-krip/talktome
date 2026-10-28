@@ -129,6 +129,30 @@ export function SessionSheet({ onClose }: { onClose: () => void }) {
     onOpenDevice: (id: string) => push({ kind: 'ptt-device', id }),
   };
 
+  // Android: no nested native stack (its pages never received taps); show the top page only.
+  // Back is the hardware/gesture back above, or the header's back link.
+  if (Platform.OS === 'android') {
+    const index = path.length - 1;
+    const page = path[index] ?? ROOT_PATH[0]!;
+    return (
+      <SettingsThemeProvider scheme={scheme}>
+        <View key={pageKey(page)} style={[stackStyles.stack, { backgroundColor: sheetColor }]}>
+          <SettingsSheet
+            {...pageActions}
+            header={headerForPage(
+              page,
+              store.bleBindings.find((item) => page.kind === 'ptt-device' && item.id === page.id)?.name,
+            )}
+            page={page}
+            onBack={index > 0 ? back : undefined}
+            scrollEnabled={!sliderDragging}
+            onDimSliding={setSliderDragging}
+          />
+        </View>
+      </SettingsThemeProvider>
+    );
+  }
+
   const stackView = (
     <ScreenStack style={stackStyles.stack}>
       {/* Empty page under Session: swiping Session away lands here and closes the sheet. */}
